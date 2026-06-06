@@ -53,10 +53,7 @@ const TS_SCRIPT_TYPES = new Set([
 
 const TS_SRC_RE = /\.[cm]?tsx?(?:[?#].*)?$/i;
 const TSX_SRC_RE = /\.[cm]?tsx(?:[?#].*)?$/i;
-const TSX_SCRIPT_TYPES = new Set([
-  'text/typescript-tsx',
-  'application/typescript-tsx',
-]);
+const TSX_SCRIPT_TYPES = new Set(['text/typescript-tsx', 'application/typescript-tsx']);
 
 const BASE_PARSER_PLUGINS: ParserPlugins = [
   'typescript',
@@ -127,17 +124,14 @@ function mergeConfig(base: TsnowConfig, user: UserTsConfig): TsnowConfig {
   if (compilerOptions.erasableSyntaxOnly === false) {
     console.warn(
       '[Typescript] Warning: "erasableSyntaxOnly: false" in tsconfig is not supported. ' +
-      'typescript-runtime always enforces erasable syntax only. ' +
-      'Non-erasable syntax (enum, namespace, decorators) will be rejected.',
+        'typescript-runtime always enforces erasable syntax only. ' +
+        'Non-erasable syntax (enum, namespace, decorators) will be rejected.',
     );
   }
 
   const jsx = compilerOptions.jsx?.toLowerCase();
-  const jsxRuntime = jsx === 'react-jsx' || jsx === 'react-jsxdev'
-    ? 'automatic'
-    : jsx === 'react'
-      ? 'classic'
-      : base.jsxRuntime;
+  const jsxRuntime =
+    jsx === 'react-jsx' || jsx === 'react-jsxdev' ? 'automatic' : jsx === 'react' ? 'classic' : base.jsxRuntime;
 
   return {
     ...base,
@@ -151,7 +145,9 @@ function mergeConfig(base: TsnowConfig, user: UserTsConfig): TsnowConfig {
   };
 }
 
-function getJsxConfig(config: TsnowConfig): { runtime: JsxRuntime; factory?: string; fragmentFactory?: string; importSource?: string } | null {
+function getJsxConfig(
+  config: TsnowConfig,
+): { runtime: JsxRuntime; factory?: string; fragmentFactory?: string; importSource?: string } | null {
   if (config.jsxRuntime === 'classic' && config.jsxFactory && config.jsxFragmentFactory) {
     return { runtime: 'classic', factory: config.jsxFactory, fragmentFactory: config.jsxFragmentFactory };
   }
@@ -171,9 +167,11 @@ async function loadConfigElement(element: Element): Promise<void> {
 }
 
 function scheduleConfigLoad(element: Element): void {
-  configReady = configReady.then(() => loadConfigElement(element)).catch((error: unknown) => {
-    console.error('[Typescript] failed to load tsconfig', error);
-  });
+  configReady = configReady
+    .then(() => loadConfigElement(element))
+    .catch((error: unknown) => {
+      console.error('[Typescript] failed to load tsconfig', error);
+    });
 }
 
 function blockTsScript(script: HTMLScriptElement): void {
@@ -195,17 +193,25 @@ async function readScript(script: HTMLScriptElement): Promise<{ code: string; fi
 
 function removeTypeOnlyNodes(ast: t.File, filename: string): void {
   traverse(ast, {
-    TSEnumDeclaration(path) {
-      throw new Error(`[Typescript] \`enum\` is not erasable syntax and cannot be transformed to valid JavaScript. File: ${filename}`);
+    TSEnumDeclaration() {
+      throw new Error(
+        `[Typescript] \`enum\` is not erasable syntax and cannot be transformed to valid JavaScript. File: ${filename}`,
+      );
     },
 
     TSModuleDeclaration(path) {
-      if (path.node.declare) { path.remove(); return; }
-      if (!path.node.body) { path.remove(); return; }
+      if (path.node.declare) {
+        path.remove();
+        return;
+      }
+      if (!path.node.body) {
+        path.remove();
+        return;
+      }
       throw new Error(`[Typescript] \`namespace\`/ \`module\` is not erasable syntax. File: ${filename}`);
     },
 
-    Decorator(path) {
+    Decorator() {
       throw new Error(`[Typescript] Decorators are not erasable syntax and cannot be compiled. File: ${filename}`);
     },
 
@@ -297,9 +303,7 @@ function transform(code: string, filename: string, tsx: boolean, config: TsnowCo
     plugins: tsx ? [...BASE_PARSER_PLUGINS, 'jsx'] : BASE_PARSER_PLUGINS,
   });
 
-  checkErasableSyntax(ast, filename, config);
-
-  removeTypeOnlyNodes(ast);
+  removeTypeOnlyNodes(ast, filename);
 
   if (jsxConfig) {
     const jsxVisitor = buildJsxVisitor(jsxConfig);
@@ -310,11 +314,7 @@ function transform(code: string, filename: string, tsx: boolean, config: TsnowCo
   const sourceUrl = typeof document !== 'undefined' ? resolveUrl(filename, document.URL) : filename;
   traverse(ast, {
     MetaProperty(path) {
-      if (
-        t.isMetaProperty(path.node)
-        && path.node.meta.name === 'import'
-        && path.node.property.name === 'meta'
-      ) {
+      if (t.isMetaProperty(path.node) && path.node.meta.name === 'import' && path.node.property.name === 'meta') {
         metaCount++;
         path.replaceWith(t.identifier('__import_meta'));
       }
@@ -322,21 +322,27 @@ function transform(code: string, filename: string, tsx: boolean, config: TsnowCo
     Program: {
       exit(path) {
         if (metaCount === 0) return;
-        path.unshiftContainer('body', t.variableDeclaration('const', [
-          t.variableDeclarator(
-            t.identifier('__import_meta'),
-            t.objectExpression([
-              t.objectProperty(t.identifier('url'), t.stringLiteral(sourceUrl)),
-              t.objectProperty(t.identifier('resolve'), t.arrowFunctionExpression(
-                [t.identifier('specifier')],
-                t.callExpression(
-                  t.memberExpression(t.identifier('__ts'), t.identifier('resolve')),
-                  [t.stringLiteral(sourceUrl), t.identifier('specifier')],
+        path.unshiftContainer(
+          'body',
+          t.variableDeclaration('const', [
+            t.variableDeclarator(
+              t.identifier('__import_meta'),
+              t.objectExpression([
+                t.objectProperty(t.identifier('url'), t.stringLiteral(sourceUrl)),
+                t.objectProperty(
+                  t.identifier('resolve'),
+                  t.arrowFunctionExpression(
+                    [t.identifier('specifier')],
+                    t.callExpression(t.memberExpression(t.identifier('__ts'), t.identifier('resolve')), [
+                      t.stringLiteral(sourceUrl),
+                      t.identifier('specifier'),
+                    ]),
+                  ),
                 ),
-              )),
-            ]),
-          ),
-        ]));
+              ]),
+            ),
+          ]),
+        );
       },
     },
   });
@@ -367,12 +373,17 @@ function jsxText(value: string): t.StringLiteral | null {
   return normalized ? t.stringLiteral(normalized) : null;
 }
 
-function convertJsxName(name: t.JSXIdentifier | t.JSXMemberExpression | t.JSXNamespacedName): t.Expression | t.StringLiteral {
+function convertJsxName(
+  name: t.JSXIdentifier | t.JSXMemberExpression | t.JSXNamespacedName,
+): t.Expression | t.StringLiteral {
   if (t.isJSXIdentifier(name)) {
     return /^[a-z]/.test(name.name) ? t.stringLiteral(name.name) : t.identifier(name.name);
   }
   if (t.isJSXMemberExpression(name)) {
-    return t.memberExpression(convertJsxName(name.object) as t.Expression, convertJsxName(name.property) as t.Expression);
+    return t.memberExpression(
+      convertJsxName(name.object) as t.Expression,
+      convertJsxName(name.property) as t.Expression,
+    );
   }
   return t.stringLiteral(`${name.namespace.name}:${name.name.name}`);
 }
@@ -381,7 +392,9 @@ function convertJsxAttribute(attribute: t.JSXAttribute | t.JSXSpreadAttribute): 
   if (t.isJSXSpreadAttribute(attribute)) {
     return t.spreadElement(attribute.argument);
   }
-  const key = t.isJSXIdentifier(attribute.name) ? t.identifier(attribute.name.name) : t.stringLiteral(attribute.name.name.name);
+  const key = t.isJSXIdentifier(attribute.name)
+    ? t.identifier(attribute.name.name)
+    : t.stringLiteral(attribute.name.name.name);
   const value = attribute.value;
   if (!value) {
     return t.objectProperty(key, t.booleanLiteral(true));
@@ -418,9 +431,10 @@ function convertJsxElement(node: t.JSXElement | t.JSXFragment, config: ActiveJsx
     ? t.objectExpression(node.openingElement.attributes.map(convertJsxAttribute))
     : t.nullLiteral();
 
-  const factory = config.runtime === 'automatic'
-    ? t.identifier(children.length > 1 ? 'jsxs' : 'jsx')
-    : memberExpression(config.factory!);
+  const factory =
+    config.runtime === 'automatic'
+      ? t.identifier(children.length > 1 ? 'jsxs' : 'jsx')
+      : memberExpression(config.factory!);
 
   return t.callExpression(factory, [tag, props, ...children]);
 }
@@ -437,7 +451,10 @@ function buildJsxVisitor(config: ActiveJsxConfig) {
         path.unshiftContainer(
           'body',
           t.importDeclaration(
-            [t.importSpecifier(t.identifier('jsx'), t.identifier('jsx')), t.importSpecifier(t.identifier('jsxs'), t.identifier('jsxs'))],
+            [
+              t.importSpecifier(t.identifier('jsx'), t.identifier('jsx')),
+              t.importSpecifier(t.identifier('jsxs'), t.identifier('jsxs')),
+            ],
             t.stringLiteral(importPath),
           ),
         );
@@ -533,7 +550,8 @@ async function resolveImports(code: string, baseUrl: string, chain?: Set<string>
   const scanLimit = mapComment?.index ?? code.length;
   const scanCode = code.slice(0, scanLimit);
 
-  const staticRe = /((?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"])(\.\.?\/[^'"]+\.(?:ts|mts|cts|tsx|mtsx|ctsx))(['"])/gi;
+  const staticRe =
+    /((?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"])(\.\.?\/[^'"]+\.(?:ts|mts|cts|tsx|mtsx|ctsx))(['"])/gi;
   let match: RegExpExecArray | null;
   while ((match = staticRe.exec(scanCode)) !== null) {
     const blobUrl = await resolveImportSpecifier(match[2], baseUrl, chain);
@@ -549,7 +567,10 @@ async function resolveImports(code: string, baseUrl: string, chain?: Set<string>
       if (scanCode[i] === '(') depth++;
       if (scanCode[i] === ')') {
         depth--;
-        if (depth === 0) { end = i + 1; break; }
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
       }
     }
     if (end === -1) continue;
@@ -557,7 +578,8 @@ async function resolveImports(code: string, baseUrl: string, chain?: Set<string>
     const fullExpr = scanCode.slice(start, end);
     const inner = fullExpr.slice(7, -1).trim();
 
-    const literalQuote = inner.length >= 2 && (inner[0] === inner[inner.length - 1]) && (inner[0] === "'" || inner[0] === '"');
+    const literalQuote =
+      inner.length >= 2 && inner[0] === inner[inner.length - 1] && (inner[0] === "'" || inner[0] === '"');
     if (literalQuote) {
       const specifier = inner.slice(1, -1);
       if (TS_EXT_RE.test(specifier)) {
@@ -579,7 +601,12 @@ async function resolveImports(code: string, baseUrl: string, chain?: Set<string>
 
 /* ─── Script injection ─── */
 
-async function injectScript(source: string, original: HTMLScriptElement, baseUrl: string, config: TsnowConfig): Promise<void> {
+async function injectScript(
+  source: string,
+  original: HTMLScriptElement,
+  baseUrl: string,
+  config: TsnowConfig,
+): Promise<void> {
   const parent = original.parentNode;
   if (!parent) return;
 

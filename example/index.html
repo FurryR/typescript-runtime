@@ -1,76 +1,78 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>typescript-runtime example</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>typescript-runtime example</title>
 
-  <!-- Optional: configure typescript-runtime behavior -->
-  <tsconfig src="/example/tsconfig.json"></tsconfig>
+    <!-- Optional: configure typescript-runtime behavior -->
+    <tsconfig src="/example/tsconfig.json"></tsconfig>
 
-  <!-- Load typescript-runtime first -->
-  <script src="/dist/typescript-runtime.global.js"></script>
+    <!-- Load typescript-runtime first -->
+    <script src="/dist/typescript-runtime.global.js"></script>
 
-  <!-- Provide a JSX runtime (not included in typescript-runtime itself) -->
-  <script>
-    const r = window.__ts = window.__ts || {};
-    r.Fragment = Symbol('Fragment');
-    r.jsx = r.jsxs = (type, props) => {
-      if (typeof type === 'function') return type(props);
-      const el = document.createElement(type);
-      if (props) for (const [k, v] of Object.entries(props)) {
-        if (k === 'children') (Array.isArray(v) ? v : [v]).forEach(c => {
-          if (c instanceof Node) el.appendChild(c);
-          else el.appendChild(document.createTextNode(String(c)));
-        });
-        else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
-        else if (k === 'className') el.className = v;
-        else el.setAttribute(k, String(v));
-      }
-      return el;
-    };
-  </script>
-</head>
-<body>
-  <h1>typescript-runtime demo</h1>
-  <p>
-    Open DevTools Sources to inspect source maps. External imports should map back to
-    <code>/example/counter.tsx</code> and <code>/example/greet.ts</code>; inline scripts appear as
-    <code>ts://inline/*.ts(x)</code>.
-  </p>
-  <div id="output"></div>
+    <!-- Provide a JSX runtime (not included in typescript-runtime itself) -->
+    <script>
+      const r = (window.__ts = window.__ts || {});
+      r.Fragment = Symbol('Fragment');
+      r.jsx = r.jsxs = (type, props) => {
+        if (typeof type === 'function') return type(props);
+        const el = document.createElement(type);
+        if (props)
+          for (const [k, v] of Object.entries(props)) {
+            if (k === 'children')
+              (Array.isArray(v) ? v : [v]).forEach((c) => {
+                if (c instanceof Node) el.appendChild(c);
+                else el.appendChild(document.createTextNode(String(c)));
+              });
+            else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
+            else if (k === 'className') el.className = v;
+            else el.setAttribute(k, String(v));
+          }
+        return el;
+      };
+    </script>
+  </head>
+  <body>
+    <h1>typescript-runtime demo</h1>
+    <p>
+      Open DevTools Sources to inspect source maps. External imports should map back to
+      <code>/example/counter.tsx</code> and <code>/example/greet.ts</code>; inline scripts appear as
+      <code>ts://inline/*.ts(x)</code>.
+    </p>
+    <div id="output"></div>
 
-  <!-- Inline TypeScript -->
-  <script type="text/typescript">
-    const el = document.createElement('h2');
-    el.textContent = 'Hello from inline TypeScript!';
-    document.getElementById('output')!.appendChild(el);
-  </script>
+    <!-- Inline TypeScript -->
+    <script type="text/typescript">
+      const el = document.createElement('h2');
+      el.textContent = 'Hello from inline TypeScript!';
+      document.getElementById('output')!.appendChild(el);
+    </script>
 
-  <!-- External .tsx with import of greet.ts -->
-  <script type="text/typescript" src="/example/counter.tsx"></script>
+    <!-- External .tsx with import of greet.ts -->
+    <script type="text/typescript" src="/example/counter.tsx"></script>
 
-  <!-- Dynamic import demo -->
-  <script type="text/typescript-tsx">
-    const btn = document.createElement('button');
-    btn.textContent = 'Dynamic import greet.ts';
-    btn.addEventListener('click', async () => {
-      const { greet, inspectSourceMap } = await import('./greet.ts');
-      greet('dynamically imported');
-      inspectSourceMap('dynamic import button');
-    });
-    document.getElementById('output')!.after(btn);
-  </script>
+    <!-- Dynamic import demo -->
+    <script type="text/typescript-tsx">
+      const btn = document.createElement('button');
+      btn.textContent = 'Dynamic import greet.ts';
+      btn.addEventListener('click', async () => {
+        const { greet, inspectSourceMap } = await import('./greet.ts');
+        greet('dynamically imported');
+        inspectSourceMap('dynamic import button');
+      });
+      document.getElementById('output')!.after(btn);
+    </script>
 
-  <!-- JSX demo using the runtime configured in tsconfig (classic mode -> __ts.jsx) -->
-  <script type="text/typescript-tsx">
-    const jsxEl = (
-      <div style="padding:8px;margin-top:8px;border:1px solid #ccc">
-        <span style="font-weight:bold">JSX works</span>
-        <span> - via __ts.jsx</span>
-      </div>
-    );
-    document.getElementById('output')!.appendChild(jsxEl);
-  </script>
-</body>
+    <!-- JSX demo using the runtime configured in tsconfig (classic mode -> __ts.jsx) -->
+    <script type="text/typescript-tsx">
+      const jsxEl = (
+        <div style="padding:8px;margin-top:8px;border:1px solid #ccc">
+          <span style="font-weight:bold">JSX works</span>
+          <span> - via __ts.jsx</span>
+        </div>
+      );
+      document.getElementById('output')!.appendChild(jsxEl);
+    </script>
+  </body>
 </html>

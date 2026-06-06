@@ -6,7 +6,8 @@ export function greet(target: string): void {
 
 export function inspectSourceMap(from: string): void {
   console.info('[Typescript example] source-mapped greet.ts call from:', from);
+  // eslint-disable-next-line no-debugger
   debugger;
 }
 
-console.log("[Typescript example] greet Side effect");
+console.log('[Typescript example] greet Side effect');
