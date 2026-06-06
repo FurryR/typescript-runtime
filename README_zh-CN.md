@@ -107,8 +107,8 @@ Classic JSX 示例：
 {
   "compilerOptions": {
     "jsx": "react",
-    "jsxFactory": "__ts.jsx",
-    "jsxFragmentFactory": "__ts.Fragment"
+    "jsxFactory": "window.jsx",
+    "jsxFragmentFactory": "window.Fragment"
   }
 }
 ```
@@ -121,7 +121,8 @@ Classic JSX 示例：
 </script>
 ```
 
-`typescript-runtime` 不提供 JSX runtime。你需要自己提供 `__ts.jsx`、React 或其他 runtime。
+`typescript-runtime` 不提供 JSX runtime。你需要自己提供 `window.jsx`、React 或其他 runtime。
+使用 automatic JSX（`"jsx": "react-jsx"`）时，请在源码中自行从 runtime 导入 `jsx`/`jsxs`；`typescript-runtime` 不会自动注入 JSX runtime import。
 
 ## Source Map
 

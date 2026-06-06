@@ -16,7 +16,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup --minify",
+    "dev": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

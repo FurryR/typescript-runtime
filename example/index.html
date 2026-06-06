@@ -13,9 +13,8 @@
 
     <!-- Provide a JSX runtime (not included in typescript-runtime itself) -->
     <script>
-      const r = (window.__ts = window.__ts || {});
-      r.Fragment = Symbol('Fragment');
-      r.jsx = r.jsxs = (type, props) => {
+      window.Fragment = Symbol('Fragment');
+      window.jsx = window.jsxs = (type, props) => {
         if (typeof type === 'function') return type(props);
         const el = document.createElement(type);
         if (props)
@@ -64,12 +63,12 @@
       document.getElementById('output')!.after(btn);
     </script>
 
-    <!-- JSX demo using the runtime configured in tsconfig (classic mode -> __ts.jsx) -->
+    <!-- JSX demo using the runtime configured in tsconfig (classic mode -> window.jsx) -->
     <script type="text/typescript-tsx">
       const jsxEl = (
         <div style="padding:8px;margin-top:8px;border:1px solid #ccc">
           <span style="font-weight:bold">JSX works</span>
-          <span> - via __ts.jsx</span>
+          <span> - via window.jsx</span>
         </div>
       );
       document.getElementById('output')!.appendChild(jsxEl);

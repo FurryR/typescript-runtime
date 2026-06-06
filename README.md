@@ -109,8 +109,8 @@ Classic JSX example:
 {
   "compilerOptions": {
     "jsx": "react",
-    "jsxFactory": "__ts.jsx",
-    "jsxFragmentFactory": "__ts.Fragment"
+    "jsxFactory": "window.jsx",
+    "jsxFragmentFactory": "window.Fragment"
   }
 }
 ```
@@ -123,7 +123,8 @@ Then use `type="text/typescript-tsx"` or a `.tsx` file:
 </script>
 ```
 
-`typescript-runtime` does not provide a JSX runtime. You must provide `__ts.jsx`, React, or another runtime yourself.
+`typescript-runtime` does not provide a JSX runtime. You must provide `window.jsx`, React, or another runtime yourself.
+For automatic JSX (`"jsx": "react-jsx"`), import `jsx`/`jsxs` from your runtime in your own source; `typescript-runtime` does not inject a JSX runtime import.
 
 ## Source Maps
 

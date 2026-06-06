@@ -13,7 +13,6 @@ type ParserPlugins = Exclude<NonNullable<Parameters<typeof parse>[1]>['plugins']
 interface TsnowConfig {
   jsxFactory?: string;
   jsxFragmentFactory?: string;
-  jsxImportSource?: string;
   jsxRuntime?: JsxRuntime;
   sourceMaps: boolean;
   scriptType: ScriptKind;
@@ -24,7 +23,6 @@ type UserTsConfig = Pick<Partial<TsnowConfig>, 'scriptType'> & {
     jsx?: string;
     jsxFactory?: string;
     jsxFragmentFactory?: string;
-    jsxImportSource?: string;
     sourceMap?: boolean;
     erasableSyntaxOnly?: boolean;
     baseUrl?: string;
@@ -39,10 +37,12 @@ const DEFAULT_CONFIG: TsnowConfig = {
 };
 
 const seenConfigs = new WeakSet<Element>();
-const textCache = new Map<string, Promise<string>>();
 let inlineScriptId = 0;
 let currentConfig = { ...DEFAULT_CONFIG };
 let configReady = Promise.resolve();
+let runtimeBridgeUrl = '';
+
+const RUNTIME_BINDING = '__ts';
 
 const TS_SCRIPT_TYPES = new Set([
   'text/typescript',
@@ -53,12 +53,11 @@ const TS_SCRIPT_TYPES = new Set([
   'application/ts',
 ]);
 
-const TS_SRC_RE = /\.[cm]?tsx?(?:[?#].*)?$/i;
 const TSX_SRC_RE = /\.[cm]?tsx(?:[?#].*)?$/i;
 const TSX_SCRIPT_TYPES = new Set(['text/typescript-tsx', 'application/typescript-tsx']);
 
-const JS_SRC_RE = /\.[cm]?jsx?(?:[?#].*)?$/i;
 const JSX_SRC_RE = /\.[cm]?jsx(?:[?#].*)?$/i;
+const PROCESSABLE_SRC_RE = /\.[cm]?[jt]sx?(?:[?#].*)?$/i;
 
 const BASE_PARSER_PLUGINS: ParserPlugins = [
   'typescript',
@@ -68,6 +67,7 @@ const BASE_PARSER_PLUGINS: ParserPlugins = [
   'importMeta',
   'topLevelAwait',
 ];
+const RUNTIME_PARSER_PLUGINS: ParserPlugins = ['importMeta', 'topLevelAwait'];
 
 const FETCH_OPTIONS: RequestInit = {
   cache: 'default',
@@ -78,7 +78,7 @@ const FETCH_OPTIONS: RequestInit = {
 function isProcessableScript(script: HTMLScriptElement): boolean {
   const type = script.type.trim().toLowerCase();
   const src = script.getAttribute('src') ?? '';
-  return TS_SCRIPT_TYPES.has(type) || TS_SRC_RE.test(src) || JS_SRC_RE.test(src);
+  return TS_SCRIPT_TYPES.has(type) || PROCESSABLE_SRC_RE.test(src);
 }
 
 function isJsxScript(script: HTMLScriptElement): boolean {
@@ -89,25 +89,6 @@ function isJsxScript(script: HTMLScriptElement): boolean {
 
 function resolveUrl(url: string, base?: string): string {
   return new URL(url, base || document.baseURI).href;
-}
-
-async function fetchText(url: string, label = url): Promise<string> {
-  const existing = textCache.get(url);
-  if (existing) return existing;
-
-  const promise = (async (): Promise<string> => {
-    const response = await fetch(url, FETCH_OPTIONS);
-    if (!response.ok) throw new Error(`[Typescript] failed to fetch ${label}: ${response.status}`);
-    return response.text();
-  })();
-
-  textCache.set(url, promise);
-  try {
-    return await promise;
-  } catch (error) {
-    textCache.delete(url);
-    throw error;
-  }
 }
 
 function toBlobUrl(code: string): string {
@@ -121,6 +102,32 @@ function toSourceMapUrl(map: unknown): string {
     binary += String.fromCharCode(...bytes.slice(i, i + 0x8000));
   }
   return `data:application/json;base64,${btoa(binary)}`;
+}
+
+function runtimeExpression(): t.Identifier {
+  return t.identifier(RUNTIME_BINDING);
+}
+
+function runtimeBridgeDeclaration(): t.VariableDeclaration {
+  return t.variableDeclaration('const', [
+    t.variableDeclarator(
+      runtimeExpression(),
+      t.awaitExpression(
+        t.callExpression(
+          t.memberExpression(t.callExpression(t.import(), [t.stringLiteral(runtimeBridgeUrl)]), t.identifier('then')),
+          [
+            t.arrowFunctionExpression(
+              [t.identifier('module')],
+              t.memberExpression(
+                t.memberExpression(t.identifier('module'), t.identifier('default')),
+                t.identifier('promise'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  ]);
 }
 
 function mergeConfig(base: TsnowConfig, user: UserTsConfig): TsnowConfig {
@@ -165,21 +172,18 @@ function mergeConfig(base: TsnowConfig, user: UserTsConfig): TsnowConfig {
     ...user,
     jsxFactory: compilerOptions.jsxFactory ?? base.jsxFactory,
     jsxFragmentFactory: compilerOptions.jsxFragmentFactory ?? base.jsxFragmentFactory,
-    jsxImportSource: compilerOptions.jsxImportSource ?? base.jsxImportSource,
     jsxRuntime,
     sourceMaps: compilerOptions.sourceMap ?? base.sourceMaps,
     scriptType: user.scriptType ?? base.scriptType,
   };
 }
 
-function getJsxConfig(
-  config: TsnowConfig,
-): { runtime: JsxRuntime; factory?: string; fragmentFactory?: string; importSource?: string } | null {
+function getJsxConfig(config: TsnowConfig): { runtime: JsxRuntime; factory?: string; fragmentFactory?: string } | null {
   if (config.jsxRuntime === 'classic' && config.jsxFactory && config.jsxFragmentFactory) {
     return { runtime: 'classic', factory: config.jsxFactory, fragmentFactory: config.jsxFragmentFactory };
   }
-  if (config.jsxRuntime === 'automatic' && config.jsxImportSource) {
-    return { runtime: 'automatic', importSource: config.jsxImportSource };
+  if (config.jsxRuntime === 'automatic') {
+    return { runtime: 'automatic' };
   }
   return null;
 }
@@ -189,7 +193,9 @@ async function loadConfigElement(element: Element): Promise<void> {
   seenConfigs.add(element);
   const src = element.getAttribute('src');
   if (!src) return;
-  const loaded = JSON.parse(await fetchText(resolveUrl(src), `tsconfig ${src}`)) as UserTsConfig;
+  const response = await fetch(resolveUrl(src), FETCH_OPTIONS);
+  if (!response.ok) throw new Error(`[Typescript] failed to fetch tsconfig ${src}: ${response.status}`);
+  const loaded = JSON.parse(await response.text()) as UserTsConfig;
   currentConfig = mergeConfig(currentConfig, loaded);
 }
 
@@ -203,24 +209,23 @@ function scheduleConfigLoad(element: Element): void {
 
 function blockScript(script: HTMLScriptElement): void {
   const src = script.getAttribute('src') ?? '';
-  if (!script.hasAttribute('type') && (TS_SRC_RE.test(src) || JS_SRC_RE.test(src))) {
+  if (!script.hasAttribute('type') && PROCESSABLE_SRC_RE.test(src)) {
     script.setAttribute('type', 'text/plain');
     script.setAttribute('raw', '');
   }
 }
 
-async function readScript(script: HTMLScriptElement): Promise<{ code: string; filename: string; baseUrl: string }> {
-  const src = script.getAttribute('src');
-  if (!src) {
-    const ext = isJsxScript(script) ? 'tsx' : 'ts';
-    const id = ++inlineScriptId;
-    return { code: script.textContent ?? '', filename: `ts://inline/${id}.${ext}`, baseUrl: document.URL };
-  }
-  const url = resolveUrl(src);
-  return { code: await fetchText(url, src), filename: url, baseUrl: url };
+function readInlineScript(script: HTMLScriptElement): { code: string; filename: string; baseUrl: string } {
+  const ext = isJsxScript(script) ? 'tsx' : 'ts';
+  const id = ++inlineScriptId;
+  return { code: script.textContent ?? '', filename: `ts://inline/${id}.${ext}`, baseUrl: document.URL };
 }
 
-function removeTypeOnlyNodes(ast: t.File, filename: string): void {
+function transformAst(ast: t.File, filename: string, jsxConfig: ActiveJsxConfig | null): void {
+  let metaCount = 0;
+  let runtimeUseCount = 0;
+  const sourceUrl = typeof document !== 'undefined' ? resolveUrl(filename, document.URL) : filename;
+
   traverse(ast, {
     TSEnumDeclaration() {
       throw new Error(
@@ -258,10 +263,11 @@ function removeTypeOnlyNodes(ast: t.File, filename: string): void {
         path.remove();
         return;
       }
+      const hadSpecifiers = path.node.specifiers.length > 0;
       path.node.specifiers = path.node.specifiers.filter((specifier) => {
         return !t.isImportSpecifier(specifier) || specifier.importKind !== 'type';
       });
-      if (path.node.specifiers.length === 0 && path.node.importKind !== 'value') {
+      if (hadSpecifiers && path.node.specifiers.length === 0) {
         path.remove();
       }
     },
@@ -315,7 +321,60 @@ function removeTypeOnlyNodes(ast: t.File, filename: string): void {
         }
       }
     },
+    MetaProperty(path) {
+      if (t.isMetaProperty(path.node) && path.node.meta.name === 'import' && path.node.property.name === 'meta') {
+        metaCount++;
+        runtimeUseCount++;
+        path.replaceWith(t.identifier('__import_meta'));
+      }
+    },
+    CallExpression(path) {
+      if (!t.isImport(path.node.callee)) return;
+      const [specifier] = path.node.arguments;
+      if (!specifier || !t.isExpression(specifier)) return;
+      runtimeUseCount++;
+      path.replaceWith(
+        t.callExpression(t.memberExpression(runtimeExpression(), t.identifier('import')), [
+          specifier,
+          t.stringLiteral(sourceUrl),
+        ]),
+      );
+    },
+    JSXElement(path: NodePath<t.JSXElement>) {
+      if (!jsxConfig) return;
+      path.replaceWith(convertJsxElement(path.node, jsxConfig));
+    },
+    JSXFragment(path: NodePath<t.JSXFragment>) {
+      if (!jsxConfig) return;
+      path.replaceWith(convertJsxElement(path.node, jsxConfig));
+    },
   });
+
+  if (runtimeUseCount === 0) return;
+  const declarations: t.Statement[] = [runtimeBridgeDeclaration()];
+  if (metaCount > 0) {
+    declarations.push(
+      t.variableDeclaration('const', [
+        t.variableDeclarator(
+          t.identifier('__import_meta'),
+          t.objectExpression([
+            t.objectProperty(t.identifier('url'), t.stringLiteral(sourceUrl)),
+            t.objectProperty(
+              t.identifier('resolve'),
+              t.arrowFunctionExpression(
+                [t.identifier('specifier')],
+                t.callExpression(t.memberExpression(runtimeExpression(), t.identifier('resolve')), [
+                  t.stringLiteral(sourceUrl),
+                  t.identifier('specifier'),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+  ast.program.body.unshift(...declarations);
 }
 
 type ActiveJsxConfig = NonNullable<ReturnType<typeof getJsxConfig>>;
@@ -332,49 +391,7 @@ function transform(code: string, filename: string, tsx: boolean, config: TsnowCo
     plugins: tsx ? [...BASE_PARSER_PLUGINS, 'jsx'] : BASE_PARSER_PLUGINS,
   });
 
-  removeTypeOnlyNodes(ast, filename);
-
-  if (jsxConfig) {
-    const jsxVisitor = buildJsxVisitor(jsxConfig);
-    traverse(ast, jsxVisitor);
-  }
-
-  let metaCount = 0;
-  const sourceUrl = typeof document !== 'undefined' ? resolveUrl(filename, document.URL) : filename;
-  traverse(ast, {
-    MetaProperty(path) {
-      if (t.isMetaProperty(path.node) && path.node.meta.name === 'import' && path.node.property.name === 'meta') {
-        metaCount++;
-        path.replaceWith(t.identifier('__import_meta'));
-      }
-    },
-    Program: {
-      exit(path) {
-        if (metaCount === 0) return;
-        path.unshiftContainer(
-          'body',
-          t.variableDeclaration('const', [
-            t.variableDeclarator(
-              t.identifier('__import_meta'),
-              t.objectExpression([
-                t.objectProperty(t.identifier('url'), t.stringLiteral(sourceUrl)),
-                t.objectProperty(
-                  t.identifier('resolve'),
-                  t.arrowFunctionExpression(
-                    [t.identifier('specifier')],
-                    t.callExpression(t.memberExpression(t.identifier('__ts'), t.identifier('resolve')), [
-                      t.stringLiteral(sourceUrl),
-                      t.identifier('specifier'),
-                    ]),
-                  ),
-                ),
-              ]),
-            ),
-          ]),
-        );
-      },
-    },
-  });
+  transformAst(ast, filename, jsxConfig);
 
   const output = generate(ast, {
     sourceMaps: config.sourceMaps,
@@ -468,87 +485,115 @@ function convertJsxElement(node: t.JSXElement | t.JSXFragment, config: ActiveJsx
   return t.callExpression(factory, [tag, props, ...children]);
 }
 
-function buildJsxVisitor(config: ActiveJsxConfig) {
-  return {
-    Program(path: NodePath<t.Program>) {
-      if (config.runtime !== 'automatic') return;
-      const importPath = `${config.importSource}/jsx-runtime`;
-      const hasRuntimeImport = path.node.body.some(
-        (node) => t.isImportDeclaration(node) && node.source.value === importPath,
-      );
-      if (!hasRuntimeImport) {
-        path.unshiftContainer(
-          'body',
-          t.importDeclaration(
-            [
-              t.importSpecifier(t.identifier('jsx'), t.identifier('jsx')),
-              t.importSpecifier(t.identifier('jsxs'), t.identifier('jsxs')),
-            ],
-            t.stringLiteral(importPath),
-          ),
-        );
-      }
-    },
-    JSXElement(path: NodePath<t.JSXElement>) {
-      path.replaceWith(convertJsxElement(path.node, config));
-    },
-    JSXFragment(path: NodePath<t.JSXFragment>) {
-      path.replaceWith(convertJsxElement(path.node, config));
-    },
-  };
-}
-
 /* ─── Runtime (injected once into global scope) ─── */
 
 function initRuntime(): void {
-  if ((window as any).__ts) return;
+  runtimeBridgeUrl = toBlobUrl('export default Promise.withResolvers();\n');
 
   async function dynamicImport(specifier: string, baseUrl: string): Promise<unknown> {
     const url = resolveUrl(specifier, baseUrl);
-    if (TS_EXT_RE.test(url)) {
-      return import(await resolveFile(url));
+    if (PROCESSABLE_EXT_RE.test(url)) {
+      const blobUrl = await resolveFile(url);
+      installPendingImportMap();
+      return import(blobUrl);
     }
     return import(url);
   }
 
   async function resolveMeta(baseUrl: string, specifier: string): Promise<string> {
     const url = resolveUrl(specifier, baseUrl);
-    if (TS_EXT_RE.test(url)) {
-      return resolveFile(url);
+    if (PROCESSABLE_EXT_RE.test(url)) {
+      const blobUrl = await resolveFile(url);
+      installPendingImportMap();
+      return blobUrl;
     }
     return url;
   }
 
-  (window as any).__ts = { import: dynamicImport, resolve: resolveMeta };
+  void import(runtimeBridgeUrl).then((module) => {
+    module.default.resolve({ import: dynamicImport, resolve: resolveMeta });
+  });
 }
 
 /* ─── Import resolution (blob URL graph) ─── */
 
-const TS_EXT_RE = /\.(?:ts|mts|cts|tsx|mtsx|ctsx)(?:[?#].*)?$/i;
+const PROCESSABLE_EXT_RE = /\.[cm]?[jt]sx?(?:[?#].*)?$/i;
+const JSX_EXT_RE = /\.[cm]?[jt]sx(?:[?#].*)?$/i;
+const SOURCE_MAPPING_URL_RE = /\n\/\/# sourceMappingURL=[^\n]*$/;
 
 interface ImportRef {
-  full: string;
-  replacement: string;
+  start: number;
+  end: number;
+  replacement: string | Promise<string>;
 }
 
-const blobCache = new Map<string, string>();
-const pendingFiles = new Map<string, Promise<string>>();
-
-function hasImportOrExport(code: string): boolean {
-  return /\b(?:import|export)\s/.test(code);
+interface ModuleBlob {
+  url: string;
+  isModule: boolean;
 }
 
-async function transformFile(url: string, chain?: Set<string>): Promise<string> {
-  const code = await fetchText(url);
-  return resolveImports(transform(code, url, TSX_SRC_RE.test(url), currentConfig), url, chain);
+interface TransformedModule {
+  code: string;
+  isModule: boolean;
 }
 
-async function resolveImportSpecifier(specifier: string, baseUrl: string, chain?: Set<string>): Promise<string> {
-  return resolveFile(resolveUrl(specifier, baseUrl), chain);
+const moduleBlobCache = new Map<string, ModuleBlob>();
+const pendingModules = new Map<string, Promise<ModuleBlob>>();
+const importMapEntries = new Map<string, string>();
+const installedImportMapEntries = new Set<string>();
+
+function parseRuntimeCode(code: string): t.File {
+  return parse(code, {
+    sourceType: 'unambiguous',
+    plugins: RUNTIME_PARSER_PLUGINS,
+  });
+}
+
+function splitSourceMapComment(code: string): { scanCode: string; suffix: string } {
+  const match = SOURCE_MAPPING_URL_RE.exec(code);
+  if (!match || match.index === undefined) return { scanCode: code, suffix: '' };
+  return { scanCode: code.slice(0, match.index), suffix: code.slice(match.index) };
+}
+
+async function transformFile(url: string, chain?: Set<string>): Promise<TransformedModule> {
+  const response = await fetch(url, FETCH_OPTIONS);
+  if (!response.ok) throw new Error(`[Typescript] failed to fetch ${url}: ${response.status}`);
+  const code = await response.text();
+  const transformed = await resolveImports(transform(code, url, JSX_EXT_RE.test(url), currentConfig), url, chain);
+  return { ...transformed, isModule: currentConfig.scriptType === 'module' || transformed.isModule };
+}
+
+async function preloadStaticDependency(specifier: string, baseUrl: string, chain?: Set<string>): Promise<string> {
+  const url = resolveUrl(specifier, baseUrl);
+  try {
+    if (!chain?.has(url)) {
+      await resolveModuleFile(url, chain);
+    }
+    return url;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw Object.assign(
+      new Error(`[Typescript] failed to resolve dependency ${JSON.stringify(specifier)} from ${baseUrl}: ${message}`),
+      { cause: error },
+    );
+  }
+}
+
+function isProcessableSpecifier(specifier: string, baseUrl: string): boolean {
+  try {
+    return PROCESSABLE_EXT_RE.test(resolveUrl(specifier, baseUrl));
+  } catch {
+    return PROCESSABLE_EXT_RE.test(specifier);
+  }
 }
 
 async function resolveFile(url: string, chain?: Set<string>): Promise<string> {
-  if (blobCache.has(url)) return blobCache.get(url)!;
+  return (await resolveModuleFile(url, chain)).url;
+}
+
+async function resolveModuleFile(url: string, chain?: Set<string>): Promise<ModuleBlob> {
+  const cached = moduleBlobCache.get(url);
+  if (cached) return cached;
 
   const currentChain = new Set(chain);
   if (currentChain.has(url)) {
@@ -556,76 +601,102 @@ async function resolveFile(url: string, chain?: Set<string>): Promise<string> {
   }
   currentChain.add(url);
 
-  const existing = pendingFiles.get(url);
+  const existing = pendingModules.get(url);
   if (existing) return existing;
 
-  const promise = (async (): Promise<string> => {
-    const blobUrl = toBlobUrl(await transformFile(url, currentChain));
-    blobCache.set(url, blobUrl);
-    return blobUrl;
+  const promise = (async (): Promise<ModuleBlob> => {
+    const transformed = await transformFile(url, currentChain);
+    const moduleBlob = { url: toBlobUrl(transformed.code), isModule: transformed.isModule };
+    moduleBlobCache.set(url, moduleBlob);
+    importMapEntries.set(url, moduleBlob.url);
+    return moduleBlob;
   })();
 
-  pendingFiles.set(url, promise);
+  pendingModules.set(url, promise);
   try {
     return await promise;
   } finally {
-    pendingFiles.delete(url);
+    pendingModules.delete(url);
   }
 }
 
-async function resolveImports(code: string, baseUrl: string, chain?: Set<string>): Promise<string> {
+async function resolveImports(code: string, baseUrl: string, chain?: Set<string>): Promise<TransformedModule> {
   const replacements: ImportRef[] = [];
-  const mapComment = code.match(/\n\/\/# sourceMappingURL=[^\n]*$/);
-  const scanLimit = mapComment?.index ?? code.length;
-  const scanCode = code.slice(0, scanLimit);
+  let isModule = false;
+  const { scanCode, suffix } = splitSourceMapComment(code);
 
-  const staticRe =
-    /((?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"])(\.\.?\/[^'"]+\.(?:ts|mts|cts|tsx|mtsx|ctsx))(['"])/gi;
-  let match: RegExpExecArray | null;
-  while ((match = staticRe.exec(scanCode)) !== null) {
-    const blobUrl = await resolveImportSpecifier(match[2], baseUrl, chain);
-    replacements.push({ full: match[0], replacement: `${match[1]}${blobUrl}${match[3]}` });
-  }
+  const ast = parseRuntimeCode(scanCode);
 
-  const dynamicRe = /import\s*\(/g;
-  while ((match = dynamicRe.exec(scanCode)) !== null) {
-    const start = match.index;
-    let depth = 1;
-    let end = -1;
-    for (let i = match.index + match[0].length; i < scanCode.length; i++) {
-      if (scanCode[i] === '(') depth++;
-      if (scanCode[i] === ')') {
-        depth--;
-        if (depth === 0) {
-          end = i + 1;
-          break;
-        }
+  traverse(ast, {
+    ImportDeclaration(path) {
+      isModule = true;
+      const source = path.node.source;
+      if (
+        !isProcessableSpecifier(source.value, baseUrl) ||
+        typeof source.start !== 'number' ||
+        typeof source.end !== 'number'
+      )
+        return;
+      replacements.push({
+        start: source.start,
+        end: source.end,
+        replacement: preloadStaticDependency(source.value, baseUrl, chain).then((url) => JSON.stringify(url)),
+      });
+    },
+    ExportNamedDeclaration(path) {
+      isModule = true;
+      const source = path.node.source;
+      if (
+        !source ||
+        !isProcessableSpecifier(source.value, baseUrl) ||
+        typeof source.start !== 'number' ||
+        typeof source.end !== 'number'
+      )
+        return;
+      replacements.push({
+        start: source.start,
+        end: source.end,
+        replacement: preloadStaticDependency(source.value, baseUrl, chain).then((url) => JSON.stringify(url)),
+      });
+    },
+    ExportAllDeclaration(path) {
+      isModule = true;
+      const source = path.node.source;
+      if (
+        !isProcessableSpecifier(source.value, baseUrl) ||
+        typeof source.start !== 'number' ||
+        typeof source.end !== 'number'
+      )
+        return;
+      replacements.push({
+        start: source.start,
+        end: source.end,
+        replacement: preloadStaticDependency(source.value, baseUrl, chain).then((url) => JSON.stringify(url)),
+      });
+    },
+    ExportDefaultDeclaration() {
+      isModule = true;
+    },
+    AwaitExpression(path) {
+      if (!path.getFunctionParent()) {
+        isModule = true;
       }
-    }
-    if (end === -1) continue;
+    },
+  });
 
-    const fullExpr = scanCode.slice(start, end);
-    const inner = fullExpr.slice(7, -1).trim();
+  const resolvedReplacements = await Promise.all(
+    replacements.map(async (replacement) => ({
+      ...replacement,
+      replacement: await replacement.replacement,
+    })),
+  );
 
-    const literalQuote =
-      inner.length >= 2 && inner[0] === inner[inner.length - 1] && (inner[0] === "'" || inner[0] === '"');
-    if (literalQuote) {
-      const specifier = inner.slice(1, -1);
-      if (TS_EXT_RE.test(specifier)) {
-        const blobUrl = await resolveImportSpecifier(specifier, baseUrl, chain);
-        replacements.push({ full: fullExpr, replacement: `import(${JSON.stringify(blobUrl)})` });
-        continue;
-      }
-    }
-    replacements.push({ full: fullExpr, replacement: `__ts.import(${inner}, ${JSON.stringify(baseUrl)})` });
+  resolvedReplacements.sort((a, b) => b.start - a.start);
+  let result = scanCode;
+  for (const { start, end, replacement } of resolvedReplacements) {
+    result = `${result.slice(0, start)}${replacement}${result.slice(end)}`;
   }
-
-  replacements.sort((a, b) => b.full.length - a.full.length);
-  let result = code;
-  for (const { full, replacement } of replacements) {
-    result = result.replace(full, replacement);
-  }
-  return result;
+  return { code: `${result}${suffix}`, isModule };
 }
 
 /* ─── Script injection ─── */
@@ -633,24 +704,23 @@ async function resolveImports(code: string, baseUrl: string, chain?: Set<string>
 async function injectScript(
   source: string,
   original: HTMLScriptElement,
-  baseUrl: string,
-  config: TsnowConfig,
+  isExternal: boolean,
+  isModule: boolean,
 ): Promise<void> {
   const parent = original.parentNode;
   if (!parent) return;
 
-  const resolved = await resolveImports(source, baseUrl);
+  installPendingImportMap(parent, original);
 
   const script = document.createElement('script');
-  script.textContent = resolved;
 
-  const isModule = config.scriptType === 'module' || hasImportOrExport(resolved);
-  script.type = isModule ? 'module' : 'text/javascript';
-
-  const requestedType = original.getAttribute('data-typescript-runtime-type');
-  if (requestedType) {
-    script.type = requestedType;
+  if (isExternal) {
+    script.src = source;
+  } else {
+    script.textContent = source;
   }
+
+  script.type = isModule ? 'module' : 'text/javascript';
 
   for (const { name, value } of Array.from(original.attributes)) {
     if (!['src', 'type'].includes(name) && name.startsWith('data-')) {
@@ -662,15 +732,49 @@ async function injectScript(
   script.setAttribute('raw', '');
 }
 
+function installPendingImportMap(parent: Node = document.head, before?: Node): void {
+  const imports: Record<string, string> = {};
+  for (const [url, blobUrl] of importMapEntries) {
+    if (installedImportMapEntries.has(url)) continue;
+    imports[url] = blobUrl;
+  }
+  if (Object.keys(imports).length === 0) return;
+
+  const script = document.createElement('script');
+  script.type = 'importmap';
+  script.textContent = JSON.stringify({ imports });
+  script.setAttribute('raw', '');
+  parent.insertBefore(script, before ?? null);
+
+  for (const url of Object.keys(imports)) {
+    installedImportMapEntries.add(url);
+  }
+}
+
+function reportProcessingError(error: unknown, script: HTMLScriptElement): void {
+  console.error('[Typescript] failed to process script', script, error);
+  setTimeout(() => {
+    throw error instanceof Error ? error : new Error(String(error));
+  });
+}
+
 async function processScript(script: HTMLScriptElement): Promise<void> {
   await configReady;
 
   try {
-    const { code, filename, baseUrl } = await readScript(script);
-    const output = transform(code, filename, isJsxScript(script), currentConfig);
-    await injectScript(output, script, baseUrl, currentConfig);
+    const src = script.getAttribute('src');
+    if (src) {
+      const moduleBlob = await resolveModuleFile(resolveUrl(src));
+      await injectScript(moduleBlob.url, script, true, moduleBlob.isModule);
+      return;
+    }
+
+    const { code, filename, baseUrl } = readInlineScript(script);
+    const output = await resolveImports(transform(code, filename, isJsxScript(script), currentConfig), baseUrl);
+    const isModule = currentConfig.scriptType === 'module' || output.isModule;
+    await injectScript(output.code, script, false, isModule);
   } catch (error) {
-    console.error('[Typescript] failed to process script', script, error);
+    reportProcessingError(error, script);
   }
 }
 

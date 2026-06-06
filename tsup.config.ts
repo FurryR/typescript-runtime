@@ -19,7 +19,6 @@ export default defineConfig({
   globalName: 'typescriptRuntimeInternal',
   clean: true,
   dts: false,
-  minify: true,
   sourcemap: true,
   platform: 'browser',
   target: 'es2020',
