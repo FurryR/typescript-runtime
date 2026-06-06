@@ -8,3 +8,5 @@ export function inspectSourceMap(from: string): void {
   console.info('[Typescript example] source-mapped greet.ts call from:', from);
   debugger;
 }
+
+console.log("[Typescript example] greet Side effect");

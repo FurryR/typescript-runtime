@@ -283,6 +283,41 @@ function transform(code: string, filename: string, tsx: boolean, config: TsnowCo
     traverse(ast, jsxVisitor);
   }
 
+  let metaCount = 0;
+  const sourceUrl = typeof document !== 'undefined' ? resolveUrl(filename, document.URL) : filename;
+  traverse(ast, {
+    MetaProperty(path) {
+      if (
+        t.isMetaProperty(path.node)
+        && path.node.meta.name === 'import'
+        && path.node.property.name === 'meta'
+      ) {
+        metaCount++;
+        path.replaceWith(t.identifier('__import_meta'));
+      }
+    },
+    Program: {
+      exit(path) {
+        if (metaCount === 0) return;
+        path.unshiftContainer('body', t.variableDeclaration('const', [
+          t.variableDeclarator(
+            t.identifier('__import_meta'),
+            t.objectExpression([
+              t.objectProperty(t.identifier('url'), t.stringLiteral(sourceUrl)),
+              t.objectProperty(t.identifier('resolve'), t.arrowFunctionExpression(
+                [t.identifier('specifier')],
+                t.callExpression(
+                  t.memberExpression(t.identifier('__ts'), t.identifier('resolve')),
+                  [t.stringLiteral(sourceUrl), t.identifier('specifier')],
+                ),
+              )),
+            ]),
+          ),
+        ]));
+      },
+    },
+  });
+
   const output = generate(ast, {
     sourceMaps: config.sourceMaps,
     sourceFileName: filename,
@@ -402,12 +437,20 @@ function initRuntime(): void {
   async function dynamicImport(specifier: string, baseUrl: string): Promise<unknown> {
     const url = resolveUrl(specifier, baseUrl);
     if (TS_EXT_RE.test(url)) {
-      return import(toBlobUrl(await transformFile(url)));
+      return import(await resolveFile(url));
     }
     return import(url);
   }
 
-  (window as any).__ts = { import: dynamicImport };
+  async function resolveMeta(baseUrl: string, specifier: string): Promise<string> {
+    const url = resolveUrl(specifier, baseUrl);
+    if (TS_EXT_RE.test(url)) {
+      return resolveFile(url);
+    }
+    return url;
+  }
+
+  (window as any).__ts = { import: dynamicImport, resolve: resolveMeta };
 }
 
 /* ─── Import resolution (blob URL graph) ─── */
