@@ -26,6 +26,7 @@ type UserTsConfig = Pick<Partial<TsnowConfig>, 'scriptType'> & {
     jsxFragmentFactory?: string;
     jsxImportSource?: string;
     sourceMap?: boolean;
+    erasableSyntaxOnly?: boolean;
   };
 };
 
@@ -122,6 +123,15 @@ function toSourceMapUrl(map: unknown): string {
 
 function mergeConfig(base: TsnowConfig, user: UserTsConfig): TsnowConfig {
   const compilerOptions = user.compilerOptions ?? {};
+
+  if (compilerOptions.erasableSyntaxOnly === false) {
+    console.warn(
+      '[Typescript] Warning: "erasableSyntaxOnly: false" in tsconfig is not supported. ' +
+      'typescript-runtime always enforces erasable syntax only. ' +
+      'Non-erasable syntax (enum, namespace, decorators) will be rejected.',
+    );
+  }
+
   const jsx = compilerOptions.jsx?.toLowerCase();
   const jsxRuntime = jsx === 'react-jsx' || jsx === 'react-jsxdev'
     ? 'automatic'
@@ -183,8 +193,22 @@ async function readScript(script: HTMLScriptElement): Promise<{ code: string; fi
   return { code: await fetchText(url, src), filename: url, baseUrl: url };
 }
 
-function removeTypeOnlyNodes(ast: t.File): void {
+function removeTypeOnlyNodes(ast: t.File, filename: string): void {
   traverse(ast, {
+    TSEnumDeclaration(path) {
+      throw new Error(`[Typescript] \`enum\` is not erasable syntax and cannot be transformed to valid JavaScript. File: ${filename}`);
+    },
+
+    TSModuleDeclaration(path) {
+      if (path.node.declare) { path.remove(); return; }
+      if (!path.node.body) { path.remove(); return; }
+      throw new Error(`[Typescript] \`namespace\`/ \`module\` is not erasable syntax. File: ${filename}`);
+    },
+
+    Decorator(path) {
+      throw new Error(`[Typescript] Decorators are not erasable syntax and cannot be compiled. File: ${filename}`);
+    },
+
     TSInterfaceDeclaration(path) {
       path.remove();
     },
@@ -192,9 +216,6 @@ function removeTypeOnlyNodes(ast: t.File): void {
       path.remove();
     },
     TSDeclareFunction(path) {
-      path.remove();
-    },
-    TSModuleDeclaration(path) {
       path.remove();
     },
     ImportDeclaration(path) {
@@ -275,6 +296,8 @@ function transform(code: string, filename: string, tsx: boolean, config: TsnowCo
     sourceType: config.scriptType === 'module' ? 'module' : 'unambiguous',
     plugins: tsx ? [...BASE_PARSER_PLUGINS, 'jsx'] : BASE_PARSER_PLUGINS,
   });
+
+  checkErasableSyntax(ast, filename, config);
 
   removeTypeOnlyNodes(ast);
 
