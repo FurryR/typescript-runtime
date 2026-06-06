@@ -8,10 +8,11 @@ Run small TypeScript and TSX scripts directly in the browser.
 
 ## Usage
 
-Load `typescript-runtime` before your TypeScript scripts:
+Load `typescript-runtime` before your TypeScript scripts (add `raw` so the library
+isn't re-processed — see [raw attribute](#scripts-marked-with-raw) below):
 
 ```html
-<script src="./dist/typescript-runtime.global.js"></script>
+<script src="./dist/typescript-runtime.global.js" raw></script>
 
 <script type="text/typescript">
   const message: string = 'Hello from TypeScript';
@@ -22,7 +23,7 @@ Load `typescript-runtime` before your TypeScript scripts:
 External files work too:
 
 ```html
-<script src="./dist/typescript-runtime.global.js"></script>
+<script src="./dist/typescript-runtime.global.js" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 
@@ -35,6 +36,18 @@ Supported script markers:
 - `type="text/typescript-tsx"`
 - `type="application/typescript-tsx"`
 - `src` ending in `.ts`, `.mts`, `.cts`, `.tsx`, `.mtsx`, or `.ctsx`
+- `src` ending in `.js`, `.mjs`, `.cjs`, `.jsx`, `.mjsx`, or `.cjsx` (import resolution)
+
+### Scripts marked with `raw`
+
+Any `<script>` with a `raw` attribute is skipped by the runtime. Add `raw` to the
+library's own script to prevent it from being re-processed:
+
+```html
+<script src="./dist/typescript-runtime.global.js" raw></script>
+```
+
+This is also useful for any third-party scripts you want to exclude from processing.
 
 External scripts are loaded with `fetch`, so normal browser CORS rules apply.
 

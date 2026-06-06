@@ -8,10 +8,10 @@
 
 ## 使用
 
-在 TypeScript 脚本之前加载 `typescript-runtime`：
+在 TypeScript 脚本之前加载 `typescript-runtime`（添加 `raw` 属性以防止库被自身处理——见下方 [`raw` 属性](#raw-属性)）：
 
 ```html
-<script src="./dist/typescript-runtime.global.js"></script>
+<script src="./dist/typescript-runtime.global.js" raw></script>
 
 <script type="text/typescript">
   const message: string = 'Hello from TypeScript';
@@ -22,7 +22,7 @@
 也可以加载外部文件：
 
 ```html
-<script src="./dist/typescript-runtime.global.js"></script>
+<script src="./dist/typescript-runtime.global.js" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 
@@ -35,6 +35,17 @@
 - `type="text/typescript-tsx"`
 - `type="application/typescript-tsx"`
 - `src` 以 `.ts`、`.mts`、`.cts`、`.tsx`、`.mtsx` 或 `.ctsx` 结尾
+- `src` 以 `.js`、`.mjs`、`.cjs`、`.jsx`、`.mjsx` 或 `.cjsx` 结尾（导入解析）
+
+### `raw` 属性
+
+带有 `raw` 属性的 `<script>` 会被运行时跳过。请给库自身的脚本加上 `raw`，防止它被再次处理：
+
+```html
+<script src="./dist/typescript-runtime.global.js" raw></script>
+```
+
+对于任何你不想被处理的第三方脚本，也可以用此属性。
 
 外部脚本通过 `fetch` 加载，因此会受到浏览器 CORS 规则限制。
 

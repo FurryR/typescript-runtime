@@ -38,7 +38,6 @@ const DEFAULT_CONFIG: TsnowConfig = {
   scriptType: 'module',
 };
 
-const seenScripts = new WeakSet<HTMLScriptElement>();
 const seenConfigs = new WeakSet<Element>();
 const textCache = new Map<string, Promise<string>>();
 let inlineScriptId = 0;
@@ -206,6 +205,7 @@ function blockScript(script: HTMLScriptElement): void {
   const src = script.getAttribute('src') ?? '';
   if (!script.hasAttribute('type') && (TS_SRC_RE.test(src) || JS_SRC_RE.test(src))) {
     script.setAttribute('type', 'text/plain');
+    script.setAttribute('raw', '');
   }
 }
 
@@ -659,12 +659,10 @@ async function injectScript(
   }
 
   parent.replaceChild(script, original);
+  script.setAttribute('raw', '');
 }
 
 async function processScript(script: HTMLScriptElement): Promise<void> {
-  if (seenScripts.has(script)) return;
-  seenScripts.add(script);
-
   await configReady;
 
   try {
@@ -677,6 +675,7 @@ async function processScript(script: HTMLScriptElement): Promise<void> {
 }
 
 function visitScript(script: HTMLScriptElement): void {
+  if (script.hasAttribute('raw')) return;
   if (!isProcessableScript(script)) return;
   blockScript(script);
   void processScript(script);

@@ -8,8 +8,8 @@
     <!-- Optional: configure typescript-runtime behavior -->
     <tsconfig src="/example/tsconfig.json"></tsconfig>
 
-    <!-- Load typescript-runtime first -->
-    <script src="/dist/typescript-runtime.global.js"></script>
+    <!-- Load typescript-runtime first (raw prevents re-processing) -->
+    <script src="/dist/typescript-runtime.global.js" raw></script>
 
     <!-- Provide a JSX runtime (not included in typescript-runtime itself) -->
     <script>
