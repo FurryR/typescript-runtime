@@ -1,0 +1,13 @@
+src/
+example/
+node_modules/
+.git/
+.github/
+.gitignore
+mise.toml
+pnpm-lock.yaml
+pnpm-workspace.yaml
+tsconfig.json
+tsup.config.ts
+*.tsbuildinfo
+*.log

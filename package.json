@@ -1,0 +1,55 @@
+{
+  "name": "typescript-runtime",
+  "version": "1.0.0",
+  "description": "Run TypeScript directly in your browser",
+  "type": "module",
+  "main": "dist/typescript-runtime.global.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FurryR/typescript-runtime.git"
+  },
+  "homepage": "https://github.com/FurryR/typescript-runtime#readme",
+  "bugs": {
+    "url": "https://github.com/FurryR/typescript-runtime/issues"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && pnpm build",
+    "example": "python3 -m http.server 8080",
+    "pack:dry": "pnpm pack --dry-run",
+    "publish:npm": "pnpm publish --access public",
+    "prepublishOnly": "pnpm check"
+  },
+  "keywords": [
+    "typescript",
+    "tsx",
+    "browser",
+    "babel",
+    "runtime"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.5.2",
+      "onFail": "download"
+    }
+  },
+  "dependencies": {
+    "@babel/generator": "^7.28.5",
+    "@babel/parser": "^7.28.5",
+    "@babel/traverse": "^7.28.5",
+    "@babel/types": "^7.28.5"
+  },
+  "devDependencies": {
+    "@types/babel__generator": "^7.27.0",
+    "@types/babel__traverse": "^7.28.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

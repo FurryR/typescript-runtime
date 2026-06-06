@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "jsxFactory": "__ts.jsx",
+    "jsxFragmentFactory": "__ts.Fragment",
+    "sourceMap": true
+  },
+  "scriptType": "module"
+}
