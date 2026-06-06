@@ -27,6 +27,9 @@ type UserTsConfig = Pick<Partial<TsnowConfig>, 'scriptType'> & {
     jsxImportSource?: string;
     sourceMap?: boolean;
     erasableSyntaxOnly?: boolean;
+    baseUrl?: string;
+    rootDir?: string;
+    paths?: Record<string, string[]>;
   };
 };
 
@@ -55,6 +58,9 @@ const TS_SRC_RE = /\.[cm]?tsx?(?:[?#].*)?$/i;
 const TSX_SRC_RE = /\.[cm]?tsx(?:[?#].*)?$/i;
 const TSX_SCRIPT_TYPES = new Set(['text/typescript-tsx', 'application/typescript-tsx']);
 
+const JS_SRC_RE = /\.[cm]?jsx?(?:[?#].*)?$/i;
+const JSX_SRC_RE = /\.[cm]?jsx(?:[?#].*)?$/i;
+
 const BASE_PARSER_PLUGINS: ParserPlugins = [
   'typescript',
   'classProperties',
@@ -70,16 +76,16 @@ const FETCH_OPTIONS: RequestInit = {
   redirect: 'follow',
 };
 
-function isTsScript(script: HTMLScriptElement): boolean {
+function isProcessableScript(script: HTMLScriptElement): boolean {
   const type = script.type.trim().toLowerCase();
   const src = script.getAttribute('src') ?? '';
-  return TS_SCRIPT_TYPES.has(type) || TS_SRC_RE.test(src);
+  return TS_SCRIPT_TYPES.has(type) || TS_SRC_RE.test(src) || JS_SRC_RE.test(src);
 }
 
-function isTsxScript(script: HTMLScriptElement): boolean {
+function isJsxScript(script: HTMLScriptElement): boolean {
   const type = script.type.trim().toLowerCase();
   const src = script.getAttribute('src') ?? '';
-  return src ? TSX_SRC_RE.test(src) : TSX_SCRIPT_TYPES.has(type);
+  return src ? TSX_SRC_RE.test(src) || JSX_SRC_RE.test(src) : TSX_SCRIPT_TYPES.has(type);
 }
 
 function resolveUrl(url: string, base?: string): string {
@@ -129,6 +135,28 @@ function mergeConfig(base: TsnowConfig, user: UserTsConfig): TsnowConfig {
     );
   }
 
+  const rootRe = /^\.\/?$/;
+  if (compilerOptions.baseUrl !== undefined && !rootRe.test(compilerOptions.baseUrl)) {
+    console.warn(
+      `[Typescript] Warning: "baseUrl" is set to "${compilerOptions.baseUrl}" in tsconfig, ` +
+        "but typescript-runtime always uses the script's effective URL (document.URL) as the import base. " +
+        'This setting is ignored.',
+    );
+  }
+  if (compilerOptions.rootDir !== undefined && !rootRe.test(compilerOptions.rootDir)) {
+    console.warn(
+      `[Typescript] Warning: "rootDir" is set to "${compilerOptions.rootDir}" in tsconfig, ` +
+        'but typescript-runtime does not use this setting for import resolution. ' +
+        'This setting is ignored.',
+    );
+  }
+  if (compilerOptions.paths !== undefined) {
+    console.warn(
+      '[Typescript] Warning: "paths" in tsconfig is not supported by typescript-runtime. ' +
+        'Import resolution always follows native ESM semantics (relative and absolute URLs).',
+    );
+  }
+
   const jsx = compilerOptions.jsx?.toLowerCase();
   const jsxRuntime =
     jsx === 'react-jsx' || jsx === 'react-jsxdev' ? 'automatic' : jsx === 'react' ? 'classic' : base.jsxRuntime;
@@ -174,8 +202,9 @@ function scheduleConfigLoad(element: Element): void {
     });
 }
 
-function blockTsScript(script: HTMLScriptElement): void {
-  if (!script.hasAttribute('type') && TS_SRC_RE.test(script.getAttribute('src') ?? '')) {
+function blockScript(script: HTMLScriptElement): void {
+  const src = script.getAttribute('src') ?? '';
+  if (!script.hasAttribute('type') && (TS_SRC_RE.test(src) || JS_SRC_RE.test(src))) {
     script.setAttribute('type', 'text/plain');
   }
 }
@@ -183,7 +212,7 @@ function blockTsScript(script: HTMLScriptElement): void {
 async function readScript(script: HTMLScriptElement): Promise<{ code: string; filename: string; baseUrl: string }> {
   const src = script.getAttribute('src');
   if (!src) {
-    const ext = isTsxScript(script) ? 'tsx' : 'ts';
+    const ext = isJsxScript(script) ? 'tsx' : 'ts';
     const id = ++inlineScriptId;
     return { code: script.textContent ?? '', filename: `ts://inline/${id}.${ext}`, baseUrl: document.URL };
   }
@@ -640,7 +669,7 @@ async function processScript(script: HTMLScriptElement): Promise<void> {
 
   try {
     const { code, filename, baseUrl } = await readScript(script);
-    const output = transform(code, filename, isTsxScript(script), currentConfig);
+    const output = transform(code, filename, isJsxScript(script), currentConfig);
     await injectScript(output, script, baseUrl, currentConfig);
   } catch (error) {
     console.error('[Typescript] failed to process script', script, error);
@@ -648,8 +677,8 @@ async function processScript(script: HTMLScriptElement): Promise<void> {
 }
 
 function visitScript(script: HTMLScriptElement): void {
-  if (!isTsScript(script)) return;
-  blockTsScript(script);
+  if (!isProcessableScript(script)) return;
+  blockScript(script);
   void processScript(script);
 }
 
