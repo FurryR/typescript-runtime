@@ -1,5 +1,5 @@
 {
-  "name": "typescript-runtime",
+  "name": "@furryr/typescript-runtime",
   "version": "1.0.0",
   "description": "Run TypeScript directly in your browser",
   "type": "module",
