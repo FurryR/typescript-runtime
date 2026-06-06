@@ -36,6 +36,7 @@ const DEFAULT_CONFIG: TsnowConfig = {
 
 const seenScripts = new WeakSet<HTMLScriptElement>();
 const seenConfigs = new WeakSet<Element>();
+const textCache = new Map<string, Promise<string>>();
 let inlineScriptId = 0;
 let currentConfig = { ...DEFAULT_CONFIG };
 let configReady = Promise.resolve();
@@ -65,6 +66,12 @@ const BASE_PARSER_PLUGINS: ParserPlugins = [
   'topLevelAwait',
 ];
 
+const FETCH_OPTIONS: RequestInit = {
+  cache: 'default',
+  credentials: 'same-origin',
+  redirect: 'follow',
+};
+
 function isTsScript(script: HTMLScriptElement): boolean {
   const type = script.type.trim().toLowerCase();
   const src = script.getAttribute('src') ?? '';
@@ -82,9 +89,22 @@ function resolveUrl(url: string, base?: string): string {
 }
 
 async function fetchText(url: string, label = url): Promise<string> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`[Typescript] failed to fetch ${label}: ${response.status}`);
-  return response.text();
+  const existing = textCache.get(url);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<string> => {
+    const response = await fetch(url, FETCH_OPTIONS);
+    if (!response.ok) throw new Error(`[Typescript] failed to fetch ${label}: ${response.status}`);
+    return response.text();
+  })();
+
+  textCache.set(url, promise);
+  try {
+    return await promise;
+  } catch (error) {
+    textCache.delete(url);
+    throw error;
+  }
 }
 
 function toBlobUrl(code: string): string {
