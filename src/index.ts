@@ -273,14 +273,26 @@ function transformAst(
     TSDeclareFunction(path) {
       path.remove();
     },
+    TSDeclareMethod(path) {
+      path.remove();
+    },
+    TSImportEqualsDeclaration() {
+      throw new Error(`[Typescript] \`import =\` is not erasable syntax. File: ${filename}`);
+    },
+    TSExportAssignment() {
+      throw new Error(`[Typescript] \`export =\` is not erasable syntax. File: ${filename}`);
+    },
+    TSNamespaceExportDeclaration() {
+      throw new Error(`[Typescript] namespace exports are not erasable syntax. File: ${filename}`);
+    },
     ImportDeclaration(path) {
-      if (path.node.importKind === 'type') {
+      if (path.node.importKind === 'type' || path.node.importKind === 'typeof') {
         path.remove();
         return;
       }
       const hadSpecifiers = path.node.specifiers.length > 0;
       path.node.specifiers = path.node.specifiers.filter((specifier) => {
-        return !t.isImportSpecifier(specifier) || specifier.importKind !== 'type';
+        return !t.isImportSpecifier(specifier) || (specifier.importKind !== 'type' && specifier.importKind !== 'typeof');
       });
       if (hadSpecifiers && path.node.specifiers.length === 0) {
         path.remove();
@@ -291,6 +303,10 @@ function transformAst(
     },
     ExportNamedDeclaration(path) {
       if (path.node.exportKind === 'type') {
+        path.remove();
+        return;
+      }
+      if (path.node.declaration && isTypeOnlyDeclaration(path.node.declaration)) {
         path.remove();
         return;
       }
@@ -315,7 +331,11 @@ function transformAst(
       context.isModule = true;
       collectImportSource(path.node.source, context, baseUrl);
     },
-    ExportDefaultDeclaration() {
+    ExportDefaultDeclaration(path) {
+      if (isTypeOnlyDeclaration(path.node.declaration)) {
+        path.remove();
+        return;
+      }
       context.isModule = true;
     },
     TSTypeAnnotation(path) {
@@ -333,34 +353,65 @@ function transformAst(
     TSTypeAssertion(path) {
       path.replaceWith(path.node.expression);
     },
+    TSSatisfiesExpression(path) {
+      path.replaceWith(path.node.expression);
+    },
     TSNonNullExpression(path) {
       path.replaceWith(path.node.expression);
     },
     TSInstantiationExpression(path) {
       path.replaceWith(path.node.expression);
     },
-    TSParameterProperty(path) {
-      const parameter = path.node.parameter;
-      if (t.isIdentifier(parameter) || t.isAssignmentPattern(parameter)) {
-        path.replaceWith(parameter);
+    TSParameterProperty() {
+      throw new Error(`[Typescript] parameter properties are not erasable syntax. File: ${filename}`);
+    },
+    VariableDeclaration(path) {
+      if (path.node.declare) {
+        path.remove();
       }
     },
-    ClassProperty(path) {
-      path.node.typeAnnotation = null;
+    VariableDeclarator(path) {
+      clearPatternTypes(path.node.id);
       path.node.definite = null;
     },
+    ClassDeclaration(path) {
+      if (path.node.declare) {
+        path.remove();
+        return;
+      }
+      clearClassTypes(path.node);
+    },
+    ClassExpression(path) {
+      clearClassTypes(path.node);
+    },
+    ClassProperty(path) {
+      if (path.node.declare) {
+        path.remove();
+        return;
+      }
+      clearClassPropertyTypes(path.node);
+    },
+    ClassAccessorProperty(path) {
+      if (path.node.declare) {
+        path.remove();
+        return;
+      }
+      clearClassPropertyTypes(path.node);
+    },
     ClassPrivateProperty(path) {
-      path.node.typeAnnotation = null;
-      path.node.definite = null;
+      clearClassPropertyTypes(path.node);
+    },
+    ClassMethod(path) {
+      clearClassMethodTypes(path.node);
+    },
+    ClassPrivateMethod(path) {
+      clearClassMethodTypes(path.node);
     },
     Function(path: NodePath<t.Function>) {
       path.node.returnType = null;
       path.node.typeParameters = null;
       for (const parameter of path.node.params) {
-        if (t.isIdentifier(parameter)) {
-          parameter.typeAnnotation = null;
-          parameter.optional = false;
-        }
+        clearPatternTypes(parameter);
       }
     },
     MetaProperty(path) {
@@ -371,6 +422,8 @@ function transformAst(
       }
     },
     CallExpression(path) {
+      path.node.typeArguments = null;
+      path.node.typeParameters = null;
       if (!t.isImport(path.node.callee)) return;
       const [specifier] = path.node.arguments;
       if (!specifier || !t.isExpression(specifier)) return;
@@ -381,6 +434,17 @@ function transformAst(
           t.stringLiteral(runtimeBaseUrl),
         ]),
       );
+    },
+    NewExpression(path) {
+      path.node.typeArguments = null;
+      path.node.typeParameters = null;
+    },
+    OptionalCallExpression(path) {
+      path.node.typeArguments = null;
+      path.node.typeParameters = null;
+    },
+    TaggedTemplateExpression(path) {
+      path.node.typeParameters = null;
     },
     AwaitExpression(path) {
       if (!path.getFunctionParent()) {
@@ -428,6 +492,88 @@ function transformAst(
 }
 
 type ActiveJsxConfig = NonNullable<ReturnType<typeof getJsxConfig>>;
+type DefiniteIdentifier = t.Identifier & { definite?: boolean | null };
+
+function isTypeOnlyDeclaration(node: t.Node): boolean {
+  return (
+    t.isTSInterfaceDeclaration(node) ||
+    t.isTSTypeAliasDeclaration(node) ||
+    t.isTSDeclareFunction(node) ||
+    t.isTSDeclareMethod(node) ||
+    (t.isTSModuleDeclaration(node) && Boolean(node.declare)) ||
+    (t.isVariableDeclaration(node) && Boolean(node.declare)) ||
+    (t.isFunctionDeclaration(node) && Boolean(node.declare)) ||
+    (t.isClassDeclaration(node) && Boolean(node.declare))
+  );
+}
+
+function clearPatternTypes(node: t.Node | null | undefined): void {
+  if (!node) return;
+  if (t.isIdentifier(node)) {
+    node.typeAnnotation = null;
+    node.optional = false;
+    (node as DefiniteIdentifier).definite = null;
+    return;
+  }
+  if (t.isAssignmentPattern(node)) {
+    node.typeAnnotation = null;
+    node.optional = false;
+    clearPatternTypes(node.left);
+    return;
+  }
+  if (t.isArrayPattern(node)) {
+    node.typeAnnotation = null;
+    node.optional = false;
+    for (const element of node.elements) {
+      clearPatternTypes(element);
+    }
+    return;
+  }
+  if (t.isObjectPattern(node)) {
+    node.typeAnnotation = null;
+    node.optional = false;
+    for (const property of node.properties) {
+      clearPatternTypes(t.isRestElement(property) ? property.argument : property.value);
+    }
+    return;
+  }
+  if (t.isRestElement(node)) {
+    node.typeAnnotation = null;
+    clearPatternTypes(node.argument);
+  }
+}
+
+function clearClassTypes(node: t.ClassDeclaration | t.ClassExpression): void {
+  node.typeParameters = null;
+  node.superTypeParameters = null;
+  node.implements = null;
+  if ('abstract' in node) node.abstract = null;
+  if ('declare' in node) node.declare = null;
+}
+
+function clearClassPropertyTypes(node: t.ClassProperty | t.ClassAccessorProperty | t.ClassPrivateProperty): void {
+  node.typeAnnotation = null;
+  node.definite = null;
+  node.optional = null;
+  node.readonly = null;
+  if ('abstract' in node) node.abstract = null;
+  if ('accessibility' in node) node.accessibility = null;
+  if ('declare' in node) node.declare = null;
+  if ('override' in node) node.override = false;
+}
+
+function clearClassMethodTypes(node: t.ClassMethod | t.ClassPrivateMethod): void {
+  node.returnType = null;
+  node.typeParameters = null;
+  node.abstract = null;
+  node.access = null;
+  node.accessibility = null;
+  node.optional = null;
+  node.override = false;
+  for (const parameter of node.params) {
+    clearPatternTypes(parameter);
+  }
+}
 
 async function transform(
   code: string,
