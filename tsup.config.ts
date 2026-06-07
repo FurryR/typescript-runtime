@@ -25,10 +25,10 @@ export default defineConfig({
   outDir: 'dist',
   noExternal: ['@babel/*'],
   define: {
-    'process.env.NODE_ENV': '"production"',
+    process: '{ "env": { "NODE_ENV": "production" } }',
   },
   banner: {
-    js: 'var process=typeof process=="undefined"?{env:{NODE_ENV:"production"}}:process;',
+    // js: 'var process=typeof process=="undefined"?{env:{NODE_ENV:"production"}}:process;',
   },
   esbuildPlugins: [externalPresetJson],
   outExtension() {
