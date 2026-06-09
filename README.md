@@ -12,7 +12,7 @@ Load `typescript-runtime` before your TypeScript scripts (add `raw` so the libra
 isn't re-processed — see [raw attribute](#scripts-marked-with-raw) below):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 
 <script type="text/typescript">
   const message: string = 'Hello from TypeScript';
@@ -23,7 +23,7 @@ isn't re-processed — see [raw attribute](#scripts-marked-with-raw) below):
 External files work too:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 
@@ -44,7 +44,7 @@ Any `<script>` with a `raw` attribute is skipped by the runtime. Add `raw` to th
 library's own script to prevent it from being re-processed:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 ```
 
 This is also useful for any third-party scripts you want to exclude from processing.
@@ -72,7 +72,7 @@ const mod = await import('./greet.ts');
 Add a `tsconfig` attribute on the runtime's script tag:
 
 ```html
-<script tsconfig="./tsconfig.browser.json" src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script tsconfig="./tsconfig.browser.json" src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 

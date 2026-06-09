@@ -11,7 +11,7 @@
 在 TypeScript 脚本之前加载 `typescript-runtime`（添加 `raw` 属性以防止库被自身处理——见下方 [`raw` 属性](#raw-属性)）：
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 
 <script type="text/typescript">
   const message: string = 'Hello from TypeScript';
@@ -22,7 +22,7 @@
 也可以加载外部文件：
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 
@@ -42,7 +42,7 @@
 带有 `raw` 属性的 `<script>` 会被运行时跳过。请给库自身的脚本加上 `raw`，防止它被再次处理：
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 ```
 
 对于任何你不想被处理的第三方脚本，也可以用此属性。
@@ -70,7 +70,7 @@ const mod = await import('./greet.ts');
 在运行时 script 标签上添加 `tsconfig` 属性：
 
 ```html
-<script tsconfig="./tsconfig.browser.json" src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script tsconfig="./tsconfig.browser.json" src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 
