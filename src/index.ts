@@ -36,11 +36,28 @@ const DEFAULT_CONFIG: TsConfig = {
   scriptType: 'module',
 };
 
-const seenConfigs = new WeakSet<Element>();
 let inlineScriptId = 0;
 let currentConfig = { ...DEFAULT_CONFIG };
-let configReady = Promise.resolve();
 let runtimeBridgeUrl = '';
+
+const FETCH_OPTIONS: RequestInit = {
+  cache: 'default',
+  credentials: 'same-origin',
+  redirect: 'follow',
+};
+
+const configReady: Promise<void> = (async () => {
+  const tsconfigSrc = document.currentScript?.getAttribute('tsconfig');
+  if (!tsconfigSrc) return;
+  try {
+    const response = await fetch(resolveUrl(tsconfigSrc), FETCH_OPTIONS);
+    if (!response.ok) throw new Error(`[Typescript] failed to fetch tsconfig ${tsconfigSrc}: ${response.status}`);
+    const loaded = JSON.parse(await response.text()) as UserTsConfig;
+    currentConfig = mergeConfig(currentConfig, loaded);
+  } catch (error) {
+    console.error('[Typescript] failed to load tsconfig', error);
+  }
+})();
 
 const RUNTIME_BINDING = '__ts';
 
@@ -67,11 +84,6 @@ const BASE_PARSER_PLUGINS: ParserPlugins = [
   'importMeta',
   'topLevelAwait',
 ];
-const FETCH_OPTIONS: RequestInit = {
-  cache: 'default',
-  credentials: 'same-origin',
-  redirect: 'follow',
-};
 
 function isProcessableScript(script: HTMLScriptElement): boolean {
   const type = script.type.trim().toLowerCase();
@@ -186,26 +198,6 @@ function getJsxConfig(config: TsConfig): { runtime: JsxRuntime; factory?: string
   return null;
 }
 
-async function loadConfigElement(element: Element): Promise<void> {
-  if (seenConfigs.has(element)) return;
-  seenConfigs.add(element);
-  const src = element.getAttribute('src');
-  if (!src) return;
-  const response = await fetch(resolveUrl(src), FETCH_OPTIONS);
-  if (!response.ok) throw new Error(`[Typescript] failed to fetch tsconfig ${src}: ${response.status}`);
-  const loaded = JSON.parse(await response.text()) as UserTsConfig;
-  currentConfig = mergeConfig(currentConfig, loaded);
-}
-
-function scheduleConfigLoad(element: Element): void {
-  configReady = configReady
-    .then(() => loadConfigElement(element))
-    .catch((error: unknown) => {
-      console.error('[Typescript] failed to load tsconfig', error);
-      throw error;
-    });
-}
-
 function blockScript(script: HTMLScriptElement): void {
   const src = script.getAttribute('src') ?? '';
   if (!script.hasAttribute('type') && PROCESSABLE_SRC_RE.test(src)) {
@@ -292,7 +284,9 @@ function transformAst(
       }
       const hadSpecifiers = path.node.specifiers.length > 0;
       path.node.specifiers = path.node.specifiers.filter((specifier) => {
-        return !t.isImportSpecifier(specifier) || (specifier.importKind !== 'type' && specifier.importKind !== 'typeof');
+        return (
+          !t.isImportSpecifier(specifier) || (specifier.importKind !== 'type' && specifier.importKind !== 'typeof')
+        );
       });
       if (hadSpecifiers && path.node.specifiers.length === 0) {
         path.remove();
@@ -869,13 +863,9 @@ function visitScript(script: HTMLScriptElement): void {
 }
 
 function scan(root: ParentNode): void {
-  if (root instanceof Element && root.localName.toLowerCase() === 'tsconfig') {
-    scheduleConfigLoad(root);
-  }
   if (root instanceof HTMLScriptElement) {
     visitScript(root);
   }
-  root.querySelectorAll?.('tsconfig[src]').forEach(scheduleConfigLoad);
   root.querySelectorAll?.('script').forEach(visitScript);
 }
 

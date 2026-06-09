@@ -67,11 +67,10 @@ const mod = await import('./greet.ts');
 
 ## 配置
 
-在 TypeScript 脚本之前添加 `<tsconfig>`：
+在运行时 script 标签上添加 `tsconfig` 属性：
 
 ```html
-<tsconfig src="./tsconfig.browser.json"></tsconfig>
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script tsconfig="./tsconfig.browser.json" src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 

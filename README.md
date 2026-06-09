@@ -69,11 +69,10 @@ const mod = await import('./greet.ts');
 
 ## Configuration
 
-Add a `<tsconfig>` element before your TypeScript scripts:
+Add a `tsconfig` attribute on the runtime's script tag:
 
 ```html
-<tsconfig src="./tsconfig.browser.json"></tsconfig>
-<script src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
+<script tsconfig="./tsconfig.browser.json" src="https://cdn.jsdelivr.net/npm/@furryr/typescript-runtime@latest/dist/typescript-runtime.global.js" raw></script>
 <script type="text/typescript" src="./app.ts"></script>
 ```
 
