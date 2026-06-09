@@ -1,6 +1,6 @@
 {
   "name": "@furryr/typescript-runtime",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Run TypeScript directly in your browser",
   "type": "module",
   "main": "dist/typescript-runtime.global.js",
